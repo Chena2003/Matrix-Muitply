@@ -10,9 +10,11 @@
 using namespace std;
 using namespace std::chrono;
 
-#define MATRIXSIZE 4096
-#define DATAMAX 1000
-#define T long long 
+// 矩阵参数设置
+#define MATRIXSIZE 4096 // 矩阵阶数
+#define DATAMAX 100000000 // 矩阵数据规模
+#define T long long // 数据类型
+
 typedef void (*func)(T **, T **, T **, int );
 
 static mt19937 pseudoRandNumGen;
@@ -20,8 +22,10 @@ alignas(32) T **matrix1;
 alignas(32) T **matrix2;
 alignas(32) T **result;
 
+// 生成随机数
 T Rand() { return pseudoRandNumGen() % DATAMAX; };
 
+// 输出矩阵
 void DisplayMatrix(ostream& os, T **matrix) {
       for(int i = 0; i < MATRIXSIZE; ++i) {
             for(int j = 0; j < MATRIXSIZE; ++j) {
@@ -31,6 +35,7 @@ void DisplayMatrix(ostream& os, T **matrix) {
       }
 };
 
+// 产生数据
 void GenData(T **matrix) {
       for(int i = 0; i < MATRIXSIZE; ++i) {
             for(int j = 0; j < MATRIXSIZE; ++j) {
@@ -48,13 +53,15 @@ uint64_t Work(func f, T **A, T **B, T **C, int size, ostream & os) {
             memset(C[i], 0, sizeof(T) * size);
       }
 
+      // 矩阵乘法
       steady_clock::time_point StartTime = steady_clock::now();
       f(A, B, C, size);
-      steady_clock::time_point EndTime = steady_clock::now();
+      steady_clock::time_point EndTime = steady_clock::now();     
 
+      // 输出矩阵
       DisplayMatrix(os, result);
 
-      // milliseconds
+      // 返回运行时间
       return duration_cast<milliseconds>(EndTime - StartTime).count();
 };
 
@@ -66,7 +73,6 @@ void CheckResult(istream &input, istream &ref) {
       T t1, t2;
       bool flag = true;
       while((input >> t1) && (ref >> t2)) {
-            // cout << t1 << ' ' << t2 << endl;
             if(t1 != t2) {
                   flag = false;
 
@@ -92,11 +98,7 @@ void MatrixMultiplyAVX512(T **A, T **B, T **C, int size);
 
 int main(int argc, char** argv) {
       // int seed = static_cast<int>(time(nullptr));
-      // int seed = 0;
-      // int seed = 101;
-      int seed = 30120;
-      // int seed = 50000123;
-      // int seed = 732819634;
+      int seed = 0;
       pseudoRandNumGen = mt19937(seed);
 
       matrix1 = new T* [MATRIXSIZE];
@@ -174,6 +176,18 @@ void MatrixSub(T **A, T **B, T **C, int size) {
       }
 };
 
+// 矩阵乘法 ijk顺序
+// void MatrixMultiply(T **A, T **B, T **C, int size) {
+//       for(int i = 0; i < size; ++i) {
+//             for(int j = 0; j < size; ++j) {
+//                   for(int k = 0; k < size; ++k) {
+//                         C[i][j] += A[i][k] * B[k][j];
+//                   }
+//             } 
+//       }
+// };
+
+// 矩阵乘法 ikj顺序
 void MatrixMultiply(T **A, T **B, T **C, int size) {
       for(int i = 0; i < size; ++i) {
             for(int k = 0; k < size; ++k) {
@@ -184,6 +198,26 @@ void MatrixMultiply(T **A, T **B, T **C, int size) {
       }
 };
 
+// 矩阵乘法 循环展开
+// void MatrixMultiply(T **A, T **B, T **C, int size) {
+//       const int BlockSize = 32;
+
+//       for(int ii = 0; ii < size; ii += BlockSize) {
+//             for(int jj = 0; jj < size; jj += BlockSize) {
+//                   for(int kk = 0; kk < size; kk += BlockSize) {
+//                         for(int i = ii; i < ii + BlockSize; ++i) {
+//                               for(int k = kk; k < kk + BlockSize; ++k) {
+//                                     for(int j = jj; j < jj + BlockSize; ++j) {
+//                                           C[i][j] += A[i][k] * B[k][j];
+//                                     }
+//                               }
+//                         }
+//                   }
+//             }
+//       }
+// };
+
+// Strassen算法
 void Strassen(T **A, T **B, T **C, int size) {
       // 矩阵大小小于等于512时直接使用普通矩阵运算
       if(size <= 256) {
@@ -290,6 +324,7 @@ void Strassen(T **A, T **B, T **C, int size) {
             }
       }
 
+      // 不释放内存，加速矩阵乘法
       // for(int i = 0; i < size; ++i) {
       //       delete A11[i];
       //       delete A12[i];
@@ -314,111 +349,54 @@ void Strassen(T **A, T **B, T **C, int size) {
       // }      
 };
 
-// 矩阵乘法函数
-// void MatrixMultiplyAVX(T **A, T **B, T **C, int size) {
-// //     #pragma omp parallel for collapse(2) // 多线程并行化
-//     for (int i = 0; i < size; ++i) {
-//         for (int j = 0; j < size; ++j) {
-//             // 加载A[i][j]到一个AVX向量中
-//             __m256i vecA = _mm256_set1_epi32(A[i][j]);
-//             int k = 0;
-//             for (k = 0; k < size; k += 8) {
-//                 // 加载B[j][k:k+7]到一个AVX向量中
-//                 __m256i vecB = _mm256_loadu_si256((__m256i*)&B[j][k]);
-//                 // 加载C[i][k:k+7]到一个AVX向量中
-//                 __m256i vecC = _mm256_loadu_si256((__m256i*)&C[i][k]);
-//                 // 计算乘加：C[i][k:k+7] += A[i][j] * B[j][k:k+7]
-//                 __m256i mul = _mm256_mullo_epi32(vecA, vecB); // 逐元素乘法
-//                 vecC = _mm256_add_epi32(vecC, mul);          // 逐元素加法
-//                 // 将结果存回C[i][k:k+7]
-//                 _mm256_storeu_si256((__m256i*)&C[i][k], vecC);
-//             }
-//         }
-//     }
-// };
+// SIMD AVX2指令
+void MatrixMultiplyAVX(T **A, T **B, T **C, int size) {
+    // 初始化结果矩阵 C 为 0
+    for (int i = 0; i < size; ++i) {
+        memset(C[i], 0, size * sizeof(T));
+    }
 
-// void MatrixMultiplyAVX(T **A, T **B, T **C, int size) {
-//     const int blockSize = 64; // 分块大小，根据缓存大小调整
+    // 遍历矩阵 A 和 C
+    for (int m = 0; m < size; m += 4) {
+        for (int k = 0; k < size; k += 4) {
+            // 定义 AVX 向量
+            __m256i C0v, C1v, C2v, C3v;
+            __m256i B0v;
 
-// //     #pragma omp parallel for collapse(2) // 多线程并行化
-//     for (int ii = 0; ii < size; ii += blockSize) {
-//         for (int jj = 0; jj < size; jj += blockSize) {
-//             for (int kk = 0; kk < size; kk += blockSize) {
-//                 // 分块计算
-//                 for (int i = ii; i < ii + blockSize && i < size; ++i) {
-//                     for (int j = jj; j < jj + blockSize && j < size; ++j) {
-//                         // 加载A[i][j]到一个AVX向量中
-//                         __m256i vecA = _mm256_set1_epi32(A[i][j]);
+            // 初始化累加器
+            C0v = _mm256_setzero_si256();
+            C1v = _mm256_setzero_si256();
+            C2v = _mm256_setzero_si256();
+            C3v = _mm256_setzero_si256();
 
-//                         int k = kk;
-//                         // 每次处理 8 个元素
-//                         for (; k <= kk + blockSize - 8 && k < size - 7; k += 8) {
-//                             // 加载B[j][k:k+7]和C[i][k:k+7]到AVX向量中
-//                             __m256i vecB = _mm256_load_si256((__m256i*)&B[j][k]);
-//                             __m256i vecC = _mm256_load_si256((__m256i*)&C[i][k]);
+            // 对矩阵 B 和 A 进行遍历，计算乘积并累加到 C[m:m+3][k:k+3]
+            for (int n = 0; n < size; ++n) {
+                // 加载 B[n][k:k+3] 到 AVX 向量
+                B0v = _mm256_loadu_si256((__m256i*)&B[n][k]);
 
-//                             // 计算乘加
-//                             __m256i mul = _mm256_mullo_epi32(vecA, vecB);
-//                             vecC = _mm256_add_epi32(vecC, mul);
+                // 加载 A[m:m+3][n] 到 AVX 向量
+                __m256i vecA0 = _mm256_set1_epi64x(A[m][n]);
+                __m256i vecA1 = _mm256_set1_epi64x(A[m + 1][n]);
+                __m256i vecA2 = _mm256_set1_epi64x(A[m + 2][n]);
+                __m256i vecA3 = _mm256_set1_epi64x(A[m + 3][n]);
 
-//                             // 将结果存回C[i][k:k+7]
-//                             _mm256_storeu_si256((__m256i*)&C[i][k], vecC);
-//                         }
+                // 逐元素乘法并累加
+                C0v = _mm256_add_epi64(C0v, _mm256_mullo_epi64(vecA0, B0v));
+                C1v = _mm256_add_epi64(C1v, _mm256_mullo_epi64(vecA1, B0v));
+                C2v = _mm256_add_epi64(C2v, _mm256_mullo_epi64(vecA2, B0v));
+                C3v = _mm256_add_epi64(C3v, _mm256_mullo_epi64(vecA3, B0v));
+            }
 
-//                         // 处理剩余的不足 8 的部分
-//                         for (; k < kk + blockSize && k < size; ++k) {
-//                             C[i][k] += A[i][j] * B[j][k];
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
+            // 将结果存回 C[m:m+3][k:k+3]
+            _mm256_storeu_si256((__m256i*)&C[m][k], C0v);
+            _mm256_storeu_si256((__m256i*)&C[m + 1][k], C1v);
+            _mm256_storeu_si256((__m256i*)&C[m + 2][k], C2v);
+            _mm256_storeu_si256((__m256i*)&C[m + 3][k], C3v);
+        }
+    }
+}
 
-
-// 矩阵乘法函数
-// void MatrixMultiplyAVX(int32_t **A, int32_t **B, int32_t **C, int size) {
-//     // 初始化结果矩阵 C 为 0
-//     for (int i = 0; i < size; ++i) {
-//         memset(C[i], 0, size * sizeof(int32_t));
-//     }
-
-//     // 遍历矩阵 A 和 C
-//     for (int i = 0; i < size; ++i) {
-//         for (int j = 0; j < size; ++j) {
-//             // 初始化累加器
-//             __m256i vecC = _mm256_setzero_si256();
-
-//             // 对矩阵 B 和 A 进行遍历，计算乘积并累加到 C[i][j]
-//             for (int k = 0; k < size; k += 8) {
-//                 // 加载 A[i][k:k+7] 到 AVX 向量
-//                 __m256i vecA = _mm256_loadu_si256((__m256i*)&A[i][k]);
-
-//                 // 加载 B[k:k+7][j] 到 AVX 向量
-//                 __m256i vecB = _mm256_setr_epi32(
-//                     B[k][j], B[k + 1][j], B[k + 2][j], B[k + 3][j],
-//                     B[k + 4][j], B[k + 5][j], B[k + 6][j], B[k + 7][j]
-//                 );
-
-//                 // 逐元素乘法
-//                 __m256i mul = _mm256_mullo_epi32(vecA, vecB);
-
-//                 // 累加到 vecC
-//                 vecC = _mm256_add_epi32(vecC, mul);
-//             }
-
-//             // 将 vecC 中的结果累加到 C[i][j]
-//             alignas(32) int32_t temp[8];
-//             _mm256_store_si256((__m256i*)temp, vecC); // 将向量存储到临时数组
-//             for (int t = 0; t < 8; ++t) {
-//                 C[i][j] += temp[t]; // 累加向量中的元素
-//             }
-//         }
-//     }
-// }
-
-// 矩阵乘法函数
+// SIMD AVX512指令
 void MatrixMultiplyAVX512(T **A, T **B, T **C, int size) {
     // 遍历矩阵 A 和 C
     for (int m = 0; m < size; m += 8) {
@@ -472,52 +450,6 @@ void MatrixMultiplyAVX512(T **A, T **B, T **C, int size) {
             _mm512_storeu_si512((__m512i*)&C[m + 5][k], C5v);
             _mm512_storeu_si512((__m512i*)&C[m + 6][k], C6v);
             _mm512_storeu_si512((__m512i*)&C[m + 7][k], C7v);
-        }
-    }
-}
-
-void MatrixMultiplyAVX(T **A, T **B, T **C, int size) {
-    // 初始化结果矩阵 C 为 0
-    for (int i = 0; i < size; ++i) {
-        memset(C[i], 0, size * sizeof(T));
-    }
-
-    // 遍历矩阵 A 和 C
-    for (int m = 0; m < size; m += 4) {
-        for (int k = 0; k < size; k += 4) {
-            // 定义 AVX 向量
-            __m256i C0v, C1v, C2v, C3v;
-            __m256i B0v;
-
-            // 初始化累加器
-            C0v = _mm256_setzero_si256();
-            C1v = _mm256_setzero_si256();
-            C2v = _mm256_setzero_si256();
-            C3v = _mm256_setzero_si256();
-
-            // 对矩阵 B 和 A 进行遍历，计算乘积并累加到 C[m:m+3][k:k+3]
-            for (int n = 0; n < size; ++n) {
-                // 加载 B[n][k:k+3] 到 AVX 向量
-                B0v = _mm256_loadu_si256((__m256i*)&B[n][k]);
-
-                // 加载 A[m:m+3][n] 到 AVX 向量
-                __m256i vecA0 = _mm256_set1_epi64x(A[m][n]);
-                __m256i vecA1 = _mm256_set1_epi64x(A[m + 1][n]);
-                __m256i vecA2 = _mm256_set1_epi64x(A[m + 2][n]);
-                __m256i vecA3 = _mm256_set1_epi64x(A[m + 3][n]);
-
-                // 逐元素乘法并累加
-                C0v = _mm256_add_epi64(C0v, _mm256_mullo_epi64(vecA0, B0v));
-                C1v = _mm256_add_epi64(C1v, _mm256_mullo_epi64(vecA1, B0v));
-                C2v = _mm256_add_epi64(C2v, _mm256_mullo_epi64(vecA2, B0v));
-                C3v = _mm256_add_epi64(C3v, _mm256_mullo_epi64(vecA3, B0v));
-            }
-
-            // 将结果存回 C[m:m+3][k:k+3]
-            _mm256_storeu_si256((__m256i*)&C[m][k], C0v);
-            _mm256_storeu_si256((__m256i*)&C[m + 1][k], C1v);
-            _mm256_storeu_si256((__m256i*)&C[m + 2][k], C2v);
-            _mm256_storeu_si256((__m256i*)&C[m + 3][k], C3v);
         }
     }
 }
